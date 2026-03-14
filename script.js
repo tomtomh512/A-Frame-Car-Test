@@ -3,6 +3,9 @@ let lastTime = 0;
 let keyPressed = {};
 let camera;
 
+let camPos = { x: 0, y: 7, z: 10 };
+let camAngleY = 0;
+
 window.onload = function () {
     const scene = document.querySelector("a-scene");
     player = new Sedan(0, 0, 90);
@@ -15,12 +18,7 @@ window.onload = function () {
 document.addEventListener('keydown', (event) => { keyPressed[event.key] = true });
 document.addEventListener('keyup', (event) => { keyPressed[event.key] = false });
 
-function loop() {
-    const currentTime = performance.now();
-    const dt = (currentTime - lastTime) / 1000;
-    lastTime = currentTime;
-
-    // Move forward and backward
+function handleAcceleration(dt) {
     if (keyPressed['ArrowUp'] || keyPressed['w']) {
         // If moving backward and press UP, apply braking
         if (player.velocity.x < 0) {
@@ -37,28 +35,15 @@ function loop() {
             player.acceleration -= player.acceleration_factor * dt;
         }
 
-    } else if (keyPressed[' ']) {
+    } else {
         // Apply regular braking if the braking won't reverse velocity
         if (player.brake_deceleration * dt < Math.abs(player.velocity.x)) {
             player.acceleration = -Math.sign(player.velocity.x) * player.brake_deceleration;
 
-        // When the player is moving slowly
+            // When the player is moving slowly
         } else {
             if (dt !== 0) {
                 // Calculate exact deceleration needed to stop
-                player.acceleration = -player.velocity.x / dt;
-            } else {
-                player.acceleration = 0;
-            }
-        }
-
-    } else {
-        // Same logic as brake deceleration
-        if (player.free_deceleration * dt < Math.abs(player.velocity.x)) {
-            player.acceleration = -Math.sign(player.velocity.x) * player.free_deceleration;
-
-        } else {
-            if (dt !== 0) {
                 player.acceleration = -player.velocity.x / dt;
             } else {
                 player.acceleration = 0;
@@ -69,8 +54,9 @@ function loop() {
 
     // Limit acceleration
     player.acceleration = Math.max(-player.max_acceleration, Math.min(player.acceleration, player.max_acceleration));
+}
 
-    // Move left and right
+function handleSteering(dt) {
     if (keyPressed['ArrowRight'] || keyPressed['d']) {
         player.steering -= player.steering_factor * dt;
     } else if (keyPressed['ArrowLeft'] || keyPressed['a']) {
@@ -86,27 +72,43 @@ function loop() {
 
     // Limit steering
     player.steering = Math.max(-player.max_steering, Math.min(player.steering, player.max_steering));
+}
 
-    // Camera
+function updateCamera(dt) {
+    const lerpFactor = keyPressed[' '] ? 20 : 10;
+
     let camOffset = new Vector(-10, 0).rotate(-player.angle);
-    let camX = player.position.x + camOffset.x;
-    let camY = player.y + 7;
-    let camZ = player.position.z + camOffset.z;
+    let targetX = player.position.x + camOffset.x;
+    let targetY = player.y + 7;
+    let targetZ = player.position.z + camOffset.z;
 
-    let camAngleX = -30;
-    let camAngleY = player.angle - 90;
-    let camAngleZ = 0;
+    // Lerp position
+    camPos.x += (targetX - camPos.x) * lerpFactor * dt;
+    camPos.y += (targetY - camPos.y) * lerpFactor * dt;
+    camPos.z += (targetZ - camPos.z) * lerpFactor * dt;
 
-    // let camX = player.position.x;
-    // let camY = player.y + 7;
-    // let camZ = player.position.z + 10;
-    //
-    // let camAngleX = -30;
-    // let camAngleY = 0;
-    // let camAngleZ = 0;
+    // Lerp angle — handle wrap-around at ±180°
+    let targetAngleY = player.angle - 90;
+    let angleDiff = targetAngleY - camAngleY;
 
-    camera.setAttribute("position", `${camX} ${camY} ${camZ}`);
-    camera.setAttribute("rotation", `${camAngleX} ${camAngleY} ${camAngleZ}`);
+    // Normalize the difference to [-180, 180] to prevent spinning
+    while (angleDiff > 180) angleDiff -= 360;
+    while (angleDiff < -180) angleDiff += 360;
+
+    camAngleY += angleDiff * lerpFactor * dt;
+
+    camera.setAttribute("position", `${camPos.x} ${camPos.y} ${camPos.z}`);
+    camera.setAttribute("rotation", `-30 ${camAngleY} 0`);
+}
+
+function loop() {
+    const currentTime = performance.now();
+    const dt = (currentTime - lastTime) / 1000;
+    lastTime = currentTime;
+
+    handleAcceleration(dt);
+    handleSteering(dt);
+    updateCamera(dt);
 
     player.update(dt);
 
